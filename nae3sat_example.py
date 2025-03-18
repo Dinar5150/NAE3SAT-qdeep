@@ -21,6 +21,7 @@ import numpy as np
 
 from dimod.generators import random_nae3sat
 from dwave.system import DWaveSampler, FixedEmbeddingComposite
+from dwave.samplers import SimulatedAnnealingSampler
 from dwave.preprocessing import ScaleComposite
 
 
@@ -32,10 +33,12 @@ rho_list = [2.1, 3.0]  # the clause-to-variable ratio
 os.makedirs(os.path.join(os.path.dirname(__file__), "plots"), exist_ok=True)
 
 # Get an Advantage sampler
-adv_sampler = DWaveSampler(solver=dict(topology__type="pegasus"))
+# adv_sampler = DWaveSampler(solver=dict(topology__type="pegasus"))
 
 # Get an Advantage2 prototype sampler
-adv2p_sampler = DWaveSampler(solver=dict(topology__type="zephyr"))
+# adv2p_sampler = DWaveSampler(solver=dict(topology__type="zephyr"))
+
+sampler = SimulatedAnnealingSampler()
 
 # Generate two NAE3SAT problems with clause-to-variable ratio rho 2.1 and 3.0
 for rho in rho_list:
@@ -45,74 +48,38 @@ for rho in rho_list:
 
     bqm = random_nae3sat(num_variables, num_clauses, seed=42)
 
-    for sampler in (adv_sampler, adv2p_sampler):
+    # Solve problem
+    print(f"Sending problem to Simulated Annealing...")
+    sampleset = sampler.sample(
+        bqm,
+        chain_strength=3,
+        num_reads=100,
+        auto_scale=False,
+        label="Example - NAE3SAT",
+    )
 
-        # Find minor embedding
-        print(f"\nMinor embedding problem into {sampler.solver.name}")
-        embedding = minorminer.find_embedding(
-            dimod.to_networkx_graph(bqm), sampler.to_networkx_graph()
-        )
-
-        # Plot chain length distributions
-        chain_lengths = [len(chain) for q, chain in embedding.items()]
-        plt.figure(rho * 100, figsize=(9, 4))
-        _, _, bar = plt.hist(
-            chain_lengths,
-            label=sampler.solver.name,
-            alpha=0.7,
-            bins=max(chain_lengths) - min(chain_lengths),
-        )
-        plt.axvline(
-            np.average(chain_lengths),
-            linestyle="dashed",
-            linewidth=1,
-            color=bar[0].get_facecolor(),
-            label=f"Mean, {sampler.solver.name}",
-        )
-        plt.xlabel("Embedding Chain Length")
-        plt.ylabel("Count")
-        plt.title(f"$\\rho={rho}$, $N={num_variables}$")
-        plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-        plt.tight_layout()
-        plt.savefig(f"./plots/rho_{int(rho * 100)}_chain_length.png")
-
-        # Solve problem
-        print(f"Sending problem to {sampler.solver.name}")
-        sampleset = FixedEmbeddingComposite(
-            ScaleComposite(sampler),
-            embedding=embedding,
-        ).sample(
-            bqm,
-            quadratic_range=sampler.properties["extended_j_range"],
-            bias_range=sampler.properties["h_range"],
-            chain_strength=3,
-            num_reads=100,
-            auto_scale=False,
-            label="Example - NAE3SAT",
-        )
-
-        # Plot energy distributions
-        plt.figure(rho * 100 + 1, figsize=(9, 4))
-        _, _, bar = plt.hist(
-            sampleset.record.energy,
-            weights=sampleset.record.num_occurrences,
-            label=sampler.solver.name,
-            alpha=0.7,
-        )
-        plt.axvline(
-            np.average(
-                sampleset.record.energy, weights=sampleset.record.num_occurrences
-            ),
-            linestyle="dashed",
-            linewidth=1,
-            color=bar[0].get_facecolor(),
-            label=f"Mean, {sampler.solver.name}",
-        )
-        plt.xlabel("Energy")
-        plt.ylabel("Count")
-        plt.title(f"$\\rho={rho}$, $N={num_variables}$")
-        plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-        plt.tight_layout()
-        plt.savefig("./plots/rho_{}_energies.png".format(int(rho * 100)))
+    # Plot energy distributions
+    plt.figure(rho * 100 + 1, figsize=(9, 4))
+    _, _, bar = plt.hist(
+        sampleset.record.energy,
+        weights=sampleset.record.num_occurrences,
+        label="Simulated Annealing",
+        alpha=0.7,
+    )
+    plt.axvline(
+        np.average(
+            sampleset.record.energy, weights=sampleset.record.num_occurrences
+        ),
+        linestyle="dashed",
+        linewidth=1,
+        color=bar[0].get_facecolor(),
+        label=f"Mean, Simulated Annealing",
+    )
+    plt.xlabel("Energy")
+    plt.ylabel("Count")
+    plt.title(f"$\\rho={rho}$, $N={num_variables}$")
+    plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+    plt.tight_layout()
+    plt.savefig("./plots/rho_{}_energies.png".format(int(rho * 100)))
 
 print("\nResults saved under the plots folder.\n")
