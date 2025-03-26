@@ -15,7 +15,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-import requests
+import dimod
 
 from dimod.generators import random_nae3sat
 from qdeepsdk import QDeepHybridSolver
@@ -25,66 +25,65 @@ num_variables = 75
 rho_list = [2.1, 3.0]  # the clause-to-variable ratio
 
 # Create directory for plots
-plots_dir = os.path.join(os.path.dirname(__file__), "plots")
-os.makedirs(plots_dir, exist_ok=True)
+os.makedirs(os.path.join(os.path.dirname(__file__), "plots"), exist_ok=True)
 
-# Initialize QDeep Hybrid Solver
+# Initialize the qdeepsdk solver and set authentication token
 solver = QDeepHybridSolver()
-solver.token = "mtagdfsplb"  # <-- Set your authentication token here
-# Optionally configure quantum optimization parameters:
-solver.m_budget = 50000   # Measurement budget (adjust if needed)
-solver.num_reads = 10000  # Number of reads (adjust if needed)
+solver.token = "your-auth-token"  # set your authentication token here
 
-def bqm_to_qubo_matrix(bqm):
-    """Convert a Binary Quadratic Model (BQM) to a full symmetric QUBO matrix.
-    
-    Returns a tuple (Q, variables) where:
-      - Q is an n x n NumPy array
-      - variables is the list of variable names in order corresponding to Q
-    """
-    variables = list(bqm.variables)
-    n = len(variables)
-    Q = np.zeros((n, n))
-    # Set linear coefficients on the diagonal.
-    for i, v in enumerate(variables):
-        Q[i, i] = bqm.linear[v]
-    # Set quadratic coefficients (ensuring symmetry).
-    for (u, v), coeff in bqm.quadratic.items():
-        i = variables.index(u)
-        j = variables.index(v)
-        Q[i, j] = coeff
-        Q[j, i] = coeff
-    return Q, variables
 
-# Generate two NAE3SAT problems with clause-to-variable ratios rho 2.1 and 3.0
+# For each clause-to-variable ratio, generate and solve the problem repeatedly
 for rho in rho_list:
     print(f"\nCreating an NAE3SAT problem with rho={rho} and N={num_variables}")
     num_clauses = round(num_variables * rho)
     bqm = random_nae3sat(num_variables, num_clauses, seed=42)
-    
-    # Convert the BQM into a QUBO matrix suitable for the hybrid solver.
-    qubo_matrix, variables = bqm_to_qubo_matrix(bqm)
-    
-    # Solve the QUBO problem using QDeep Hybrid Solver.
-    print("Sending problem to QDeep Hybrid Solver...")
-    try:
-        response = solver.solve(qubo_matrix)
-        # Expected response structure:
-        # {
-        #     "QdeepHybridSolver": {
-        #         "configuration": [0.0, 1.0, ...],
-        #         "energy": -1.0,
-        #         "time": 3.6245157718658447
-        #     }
-        # }
-        result = response.get("QdeepHybridSolver", {})
-        energy = result.get("energy")
-        configuration = result.get("configuration")
-        time_taken = result.get("time")
-        print("Hybrid Solver Results:", result)
-    except ValueError as e:
-        print(f"Error: {e}")
-        continue
-    except requests.RequestException as e:
-        print(f"API Error: {e}")
-        continue
+
+    # Convert the binary quadratic model (BQM) to a QUBO dictionary and offset.
+    Q_dict, offset = bqm.to_qubo()
+    # Create a dense QUBO matrix
+    Q_matrix = np.zeros((num_variables, num_variables))
+    for (i, j), value in Q_dict.items():
+        Q_matrix[int(i), int(j)] = value
+
+    print("Solving QUBO problem using QDeepHybridSolver...")
+
+    # Simulate multiple reads by solving repeatedly and collecting energies
+    energies = []
+    num_reads = 5  # number of independent solution attempts
+    for _ in range(num_reads):
+        print(_)
+        try:
+            resp = solver.solve(Q_matrix)
+            # The response is expected to be a dictionary with a "QdeepHybridSolver" key
+            result = resp.get("QdeepHybridSolver", {})
+            energies.append(result.get("energy", np.nan))
+        except Exception as e:
+            print(f"Solver error: {e}")
+            energies.append(np.nan)
+
+    energies = np.array(energies)
+
+    # Plot energy distributions
+    plt.figure(rho * 100 + 1, figsize=(9, 4))
+    counts, bins, patches = plt.hist(
+        energies,
+        bins=20,
+        alpha=0.7,
+        label="QDeepHybridSolver",
+    )
+    mean_energy = np.average(energies[np.isfinite(energies)])
+    plt.axvline(
+        mean_energy,
+        linestyle="dashed",
+        linewidth=1,
+        color=patches[0].get_facecolor() if patches else "black",
+        label=f"Mean: {mean_energy:.2f}",
+    )
+    plt.xlabel("Energy")
+    plt.ylabel("Count")
+    plt.title(f"$\\rho={rho}$, $N={num_variables}$")
+    plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+    plt.tight_layout()
+    plt.savefig("./plots/rho_{}_energies.png".format(int(rho * 100)))
+
+print("\nResults saved under the plots folder.\n")
