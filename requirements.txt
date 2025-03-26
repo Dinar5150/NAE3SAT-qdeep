@@ -1,2 +1,5 @@
 dwave-ocean-sdk>=5.1.0
 matplotlib>=3.5.2
+numpy
+requests
+qdeepsdk
