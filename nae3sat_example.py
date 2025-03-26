@@ -31,7 +31,6 @@ os.makedirs(os.path.join(os.path.dirname(__file__), "plots"), exist_ok=True)
 solver = QDeepHybridSolver()
 solver.token = "your-auth-token"  # set your authentication token here
 
-
 # For each clause-to-variable ratio, generate and solve the problem repeatedly
 for rho in rho_list:
     print(f"\nCreating an NAE3SAT problem with rho={rho} and N={num_variables}")
@@ -50,16 +49,15 @@ for rho in rho_list:
     # Simulate multiple reads by solving repeatedly and collecting energies
     energies = []
     num_reads = 5  # number of independent solution attempts
-    for _ in range(num_reads):
-        print(_)
-        try:
-            resp = solver.solve(Q_matrix)
-            # The response is expected to be a dictionary with a "QdeepHybridSolver" key
-            result = resp.get("QdeepHybridSolver", {})
-            energies.append(result.get("energy", np.nan))
-        except Exception as e:
-            print(f"Solver error: {e}")
-            energies.append(np.nan)
+
+    try:
+        resp = solver.solve(Q_matrix)
+        # The response is expected to be a dictionary with a "QdeepHybridSolver" key
+        result = resp.get("QdeepHybridSolver", {})
+        energies.append(result.get("energy", np.nan))
+    except Exception as e:
+        print(f"Solver error: {e}")
+        energies.append(np.nan)
 
     energies = np.array(energies)
 
